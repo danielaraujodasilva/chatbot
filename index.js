@@ -96,7 +96,7 @@ Para sair do atendimento, digite "sair".`;
 async function enviarParaIA(pergunta) {
   try {
     const resposta = await openai.chat.completions.create({
-      model: 'gpt-4',
+      model: 'gpt-3.5-turbo',
       messages: [
         {
           role: 'system',
