@@ -1,4 +1,4 @@
-import { create, Whatsapp } from 'venom-bot';
+import { create } from 'venom-bot';
 import express from 'express';
 import dotenv from 'dotenv';
 import { OpenAI } from 'openai';
@@ -17,6 +17,15 @@ let client = null;
 create({
   session: 'chat-tatuagem',
   multidevice: true,
+  headless: true,
+  browserArgs: [
+    '--no-sandbox',
+    '--disable-setuid-sandbox',
+    '--disable-gpu',
+    '--disable-dev-shm-usage',
+    '--headless=new',
+  ],
+  executablePath: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe' // ajuste o caminho se necessário
 })
   .then((whatsappClient) => startBot(whatsappClient))
   .catch((err) => console.error(err));
@@ -38,7 +47,10 @@ async function enviarParaIA(pergunta) {
     const resposta = await openai.chat.completions.create({
       model: 'gpt-4',
       messages: [
-        { role: 'system', content: 'Você é uma secretária virtual de um estúdio de tatuagem. Seja simpática, clara e objetiva. Ajude com dúvidas sobre orçamentos, promoções, regras e agendamentos.' },
+        {
+          role: 'system',
+          content: 'Você é uma secretária virtual de um estúdio de tatuagem. Seja simpática, clara e objetiva. Ajude com dúvidas sobre orçamentos, promoções, regras e agendamentos.'
+        },
         { role: 'user', content: pergunta }
       ],
     });
