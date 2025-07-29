@@ -150,4 +150,4 @@ Agora responda à seguinte pergunta do cliente:
 
 // Painel web (opcional)
 app.get('/', (req, res) => res.send('Painel do chatbot será criado aqui!'));
-app.listen(port);
+app.listen(port); 
