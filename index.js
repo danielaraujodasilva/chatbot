@@ -91,6 +91,8 @@ Digite o número da pergunta que deseja saber:
 // Consulta IA local (Ollama)
 async function enviarParaIALocal(pergunta) {
   try {
+    console.log(`🧠 Enviando pergunta para IA local: "${pergunta}"`);
+
     const prompt = `
 Você é a secretária virtual do Estúdio de Tatuagem Daniel Araujo.
 
@@ -124,13 +126,22 @@ Agora responda à seguinte pergunta do cliente:
 "${pergunta}"
 `.trim();
 
+    console.log('⏳ Aguardando resposta da IA...');
+
     const response = await axios.post('http://localhost:11434/api/generate', {
       model: 'nous-hermes2',
       prompt: prompt,
       stream: false,
     });
 
+    if (!response.data || !response.data.response) {
+      console.warn('⚠️ IA respondeu vazio ou mal formatado');
+      return '⚠️ A IA não conseguiu gerar uma resposta no momento. Tente novamente em instantes.';
+    }
+
+    console.log(`✅ Resposta da IA recebida: ${response.data.response.trim()}`);
     return response.data.response.trim();
+
   } catch (error) {
     console.error('❌ Erro ao consultar IA local:', error.message);
     return '❌ Houve um problema ao consultar a IA local. Verifique se o Ollama está rodando com o modelo correto.';
