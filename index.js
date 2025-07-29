@@ -1,18 +1,12 @@
 import { create } from 'venom-bot';
 import express from 'express';
 import dotenv from 'dotenv';
-import { OpenAI } from 'openai';
+import axios from 'axios';
 
 dotenv.config();
 
 const app = express();
 const port = process.env.PORT || 3000;
-
-// Inicia cliente OpenAI
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
-
 let client = null;
 
 // Controle de clientes com IA ativada
@@ -39,7 +33,7 @@ create({
     '--disable-dev-shm-usage',
     '--headless=new',
   ],
-  executablePath: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe', // Ajuste se necessário
+  executablePath: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe', // ajuste se necessário
 })
   .then((whatsappClient) => startBot(whatsappClient))
   .catch((err) => console.error('❌ Erro ao iniciar Venom:', err));
@@ -54,12 +48,11 @@ async function startBot(whatsappClient) {
     const from = message.from.toString();
     const texto = message.body.toLowerCase().trim();
 
-    // Ativar IA com palavra-chave
     if (texto === 'batatadoce') {
       clientesAtivos.set(from, true);
 
       const menu =
-`🌟 Olá! Eu sou a secretária virtual do Estúdio Daniel Araujo. 
+`🌟 Olá! Eu sou a secretária virtual do Estúdio Daniel Araujo.
 Posso te ajudar com dúvidas, informações e orçamentos.
 
 Digite o número da pergunta que deseja saber:
@@ -77,35 +70,28 @@ Digite o número da pergunta que deseja saber:
       return;
     }
 
-    // Desativar IA
     if (texto === 'sair') {
       clientesAtivos.delete(from);
       await client.sendText(from, '🚪 Atendimento encerrado. Quando quiser voltar, é só digitar "batatadoce".');
       return;
     }
 
-    // Atendimento com IA
     if (clientesAtivos.get(from)) {
       if (faq[texto]) {
         await client.sendText(from, faq[texto]);
         return;
       }
 
-      const resposta = await enviarParaIA(message.body);
+      const resposta = await enviarParaIALocal(message.body);
       await client.sendText(from, resposta);
     }
   });
 }
 
-// Consulta IA com instruções da secretária do estúdio
-async function enviarParaIA(pergunta) {
+// Consulta IA local (Ollama)
+async function enviarParaIALocal(pergunta) {
   try {
-    const resposta = await openai.chat.completions.create({
-      model: process.env.OPENAI_MODEL || 'gpt-3.5-turbo',
-      messages: [
-        {
-          role: 'system',
-          content: `
+    const prompt = `
 Você é a secretária virtual do Estúdio de Tatuagem Daniel Araujo.
 
 Seu papel:
@@ -117,43 +103,37 @@ Seu papel:
 - Utilize linguagem acessível e sem termos técnicos complexos
 
 O Estúdio de tatuagem se chama Estúdio Daniel Araujo.
-Se o cliente quiser ver meus trabalhos, sugira o instagram instagram.com/danielaraujotatuador .
+Se o cliente quiser ver meus trabalhos, sugira o instagram instagram.com/danielaraujotatuador.
 O endereço é Avenida Jurema, 609, Pq Jurema, Guarulhos.
-O horário de atendimento é 24h, exigindo apenas um préio agendamento.
+O horário de atendimento é 24h, exigindo apenas um prévio agendamento.
 Qualquer agendamento exige o pagamento de um sinal no valor de R$50. Esse valor é abatido do valor total da tatuagem, o cliente só perde esse valor se não comparecer no horário agendado.
-Se o cliente estiver interessado na promoção, provavelmente se trata da promoção de R$699, vou descrever as regras dela aqui para o cliente:
+Se o cliente estiver interessado na promoção, provavelmente se trata da promoção de R$699, com as seguintes regras:
 
-1 - só vale para tatuagem em preto e branco
-2 - não vale para coberturas nem reformas de tatuagens.
-3 - tem que ser algo possível de se fazer em uma sessão só (ou que você esteja ciente que se precisar de mais uma sessão vai ser cobrado o mesmo valor novamente)
-4 - O horário é reservado e cobramos R$50 de sinal, aí esse valor é abatido na hora que for pagar a tatuagem, você só perde se faltar no agendamento.
-5 - Temos também anestesia pra ajudar a guentar hahaha, custa R$99 por pomada! Garanto que é a original que funciona de verdade!
-6 - Promoção válida pra costas, braço ou perna (interna ou externa) ou peitoral!
+1 - Só vale para tatuagem em preto e branco
+2 - Não vale para coberturas nem reformas de tatuagens.
+3 - Tem que ser algo possível de se fazer em uma sessão só (ou que você esteja ciente que se precisar de mais uma sessão vai ser cobrado o mesmo valor novamente)
+4 - O horário é reservado e cobramos R$50 de sinal, esse valor é abatido no pagamento da tatuagem, você só perde se faltar.
+5 - Temos também anestesia por R$99 (pomada original que realmente funciona).
+6 - Promoção válida para costas, braço, perna (interna ou externa) ou peitoral.
 
-Aí dentro dessas regras, pode desenhar o que quiser.
+Se o cliente quiser um orçamento personalizado, diga que o tatuador irá avaliar, peça que envie referências e explique a ideia.
+Se o cliente quiser agendar, diga que você irá chamar o tatuador para continuar a conversa.
 
-Se o cliente quiser um orçamento personalizado, explique apenas eu posso dar orçamentos personalizados, mas que ele pode enviar as imagens de referência e explicar a idéia dele que você vai me chamar!
-Se o cliente expressar vontade de agendar, avise que você não consegue mas que vai me chamar e eu assumo a conversa!
+Agora responda à seguinte pergunta do cliente:
 
-          `.trim()
-        },
-        { role: 'user', content: pergunta }
-      ]
+"${pergunta}"
+`.trim();
+
+    const response = await axios.post('http://localhost:11434/api/generate', {
+      model: 'nous-hermes2',
+      prompt: prompt,
+      stream: false,
     });
 
-    return resposta.choices[0].message.content.trim();
+    return response.data.response.trim();
   } catch (error) {
-    console.error('❌ Erro ao consultar IA:', error.message);
-
-    if (error.status === 429) {
-      return '⚠️ Estamos temporariamente acima do limite de uso da IA. Tente novamente em instantes.';
-    }
-
-    if (error.status === 404) {
-      return '⚠️ O modelo de IA não está disponível. Verifique se sua conta OpenAI está ativa.';
-    }
-
-    return '❌ Ocorreu um erro ao tentar responder. Tente novamente em breve.';
+    console.error('❌ Erro ao consultar IA local:', error.message);
+    return '❌ Houve um problema ao consultar a IA local. Verifique se o Ollama está rodando com o modelo correto.';
   }
 }
 
