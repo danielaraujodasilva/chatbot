@@ -12,6 +12,10 @@ let client = null;
 // Controle de clientes com IA ativada
 const clientesAtivos = new Map();
 
+// Buffer para acumular mensagens por cliente e timers para controlar envio único
+const buffersMensagens = new Map();
+const timersResposta = new Map();
+
 // Perguntas frequentes (FAQ)
 const faq = {
   1: '💬 Quanto custa uma tatuagem?\nNossas promoções começam em R$699, e o valor final depende do tamanho e da arte.',
@@ -51,6 +55,13 @@ async function startBot(whatsappClient) {
     if (texto === 'batatadoce') {
       clientesAtivos.set(from, true);
 
+      // Limpar buffers e timers caso existam
+      buffersMensagens.delete(from);
+      if (timersResposta.has(from)) {
+        clearTimeout(timersResposta.get(from));
+        timersResposta.delete(from);
+      }
+
       const menu =
 `🌟 Olá! Eu sou a secretária virtual do Estúdio Daniel Araujo.
 Posso te ajudar com dúvidas, informações e orçamentos.
@@ -72,6 +83,14 @@ Digite o número da pergunta que deseja saber:
 
     if (texto === 'sair') {
       clientesAtivos.delete(from);
+
+      // Limpar buffers e timers caso existam
+      buffersMensagens.delete(from);
+      if (timersResposta.has(from)) {
+        clearTimeout(timersResposta.get(from));
+        timersResposta.delete(from);
+      }
+
       await client.sendText(from, '🚪 Atendimento encerrado. Quando quiser voltar, é só digitar "batatadoce".');
       return;
     }
@@ -82,8 +101,28 @@ Digite o número da pergunta que deseja saber:
         return;
       }
 
-      const resposta = await enviarParaIALocal(message.body);
-      await client.sendText(from, resposta);
+      // Acumular mensagens no buffer do cliente
+      if (!buffersMensagens.has(from)) {
+        buffersMensagens.set(from, []);
+      }
+      buffersMensagens.get(from).push(message.body.trim());
+
+      // Limpar timer anterior para reiniciar contagem
+      if (timersResposta.has(from)) {
+        clearTimeout(timersResposta.get(from));
+      }
+
+      // Definir novo timer para enviar a resposta após 10 segundos de "silêncio"
+      const timeout = setTimeout(async () => {
+        const mensagensConcatenadas = buffersMensagens.get(from).join(' ');
+        buffersMensagens.delete(from);
+        timersResposta.delete(from);
+
+        const resposta = await enviarParaIALocal(mensagensConcatenadas);
+        await client.sendText(from, resposta);
+      }, 10000); // 10 segundos
+
+      timersResposta.set(from, timeout);
     }
   });
 }
@@ -97,6 +136,7 @@ async function enviarParaIALocal(pergunta) {
 Você é a secretária virtual do Estúdio de Tatuagem Daniel Araujo.
 
 Seu papel:
+- Seja objetiva e responda apenas ao que foi perguntado, de forma educada e clara, sem rodeios.
 - Ser educada, clara e simpática
 - Pode ser extremamente informal, usar gírias e tentar seguir a conversa no mesmo tom que o cliente.
 - Informar sobre promoções, estilos de tatuagem, cuidados, preços e agendamentos
@@ -150,4 +190,4 @@ Agora responda à seguinte pergunta do cliente:
 
 // Painel web (opcional)
 app.get('/', (req, res) => res.send('Painel do chatbot será criado aqui!'));
-app.listen(port); 
+app.listen(port);
