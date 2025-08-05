@@ -12,7 +12,6 @@ const app = express();
 const port = process.env.PORT || 3010;
 let client = null;
 
-const clientesAtivos = new Map();
 const buffersMensagens = new Map();
 const timersResposta = new Map();
 
@@ -37,53 +36,40 @@ async function startBot(whatsappClient) {
   console.log(`🤖 Bot iniciado! Rodando na porta ${port}`);
 
   client.onMessage(async (message) => {
-    console.log('🔔 Mensagem recebida:', {
-      from: message.from,
-      type: message.type,
-      isGroupMsg: message.isGroupMsg,
-    });
+    console.log('🔔 Mensagem RECEBIDA no onMessage:', JSON.stringify(message, null, 2));
 
-    // Log completo da mensagem para inspeção detalhada
-    console.log('🧐 Mensagem completa:', JSON.stringify(message, null, 2));
-
-    if (message.isGroupMsg) {
-      console.log('⚠️ Mensagem em grupo ignorada');
-      return;
-    }
+    if (message.isGroupMsg) return;
 
     const from = message.from.toString();
 
-    // Ajuste para detectar todos tipos possíveis de áudio/voz
-    const tiposAudio = ['audio', 'ptt', 'voice', 'audio_ogg']; 
-
-    if (tiposAudio.includes(message.type)) {
-      console.log('🎙️ Áudio ou PTT recebido de:', from);
-
+    // Identificando o tipo da mensagem para áudio
+    if (message.type === 'audio' || message.type === 'ptt' || message.type === 'voice') {
       await client.sendText(from, '🎙️ Recebido! Transcrevendo seu áudio...');
 
       try {
-        const oggPath = `./audios/${from}-${Date.now()}.ogg`;
+        const audioExt = message.mimetype?.includes('ogg') ? 'ogg' : 'mp3';
+        const audioPath = `./audios/${from}-${Date.now()}.${audioExt}`;
 
         const audioBuffer = await client.decryptFile(message);
-        fs.writeFileSync(oggPath, audioBuffer);
-        console.log('💾 Áudio salvo em:', oggPath);
+        fs.writeFileSync(audioPath, audioBuffer);
 
-        const texto = await transcreverAudio(oggPath);
-        console.log('📝 Texto transcrito:', texto);
+        console.log(`🎧 Áudio salvo em: ${audioPath}`);
+
+        const texto = await transcreverAudio(audioPath);
 
         if (!texto) {
           await client.sendText(from, '❌ Não consegui entender o áudio.');
-          fs.unlinkSync(oggPath);
+          fs.unlinkSync(audioPath);
           return;
         }
 
         const resposta = await enviarParaIALocal(texto);
         await client.sendText(from, resposta);
 
-        fs.unlinkSync(oggPath);
+        fs.unlinkSync(audioPath);
 
       } catch (error) {
-        console.error('❌ Erro ao processar áudio:', error);
+        console.error('Erro ao processar áudio:', error);
         await client.sendText(from, '❌ Erro ao processar seu áudio.');
       }
       return;
@@ -107,9 +93,9 @@ async function startBot(whatsappClient) {
   });
 }
 
-// Função que chama Whisper CLI para transcrever
+// ✅ Função atualizada que chama Whisper CLI e lê a transcrição
 async function transcreverAudio(audioPath) {
-  console.log('🎧 transcreverAudio chamada para:', audioPath);
+  console.log('🎧 Iniciando transcrição com Whisper para:', audioPath);
 
   return new Promise((resolve) => {
     const absolutePath = path.resolve(audioPath);
@@ -144,7 +130,7 @@ async function transcreverAudio(audioPath) {
           return resolve(null);
         }
 
-        // Opcional: Apaga o arquivo txt depois de ler
+        // (Opcional) Apaga o arquivo txt depois de ler
         fs.unlink(txtPath, () => {});
 
         resolve(texto);
