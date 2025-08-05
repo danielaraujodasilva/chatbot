@@ -17,8 +17,8 @@ const timersResposta = new Map();
 
 create({
   session: 'chat-tatuagem',
-  multidevice: true,            // Tente alterar para false se continuar não recebendo áudio
-  headless: "new",              // Tente "true" se persistir problema
+  multidevice: true,
+  headless: "new",
   browserArgs: [
     '--no-sandbox',
     '--disable-setuid-sandbox',
@@ -57,12 +57,11 @@ async function startBot(whatsappClient) {
         }
 
         const audioPath = `./audios/${from}-${Date.now()}.${audioExt}`;
-
         const audioBuffer = await client.decryptFile(message);
         fs.writeFileSync(audioPath, audioBuffer);
-
         console.log(`🎧 Áudio salvo em: ${audioPath}`);
 
+        // Chama transcrição
         const texto = await transcreverAudio(audioPath);
 
         if (!texto) {
@@ -113,16 +112,18 @@ async function startBot(whatsappClient) {
   });
 }
 
-// Função para transcrição com Whisper CLI - ALTERAÇÃO AQUI: --output_dir ./audios
 async function transcreverAudio(audioPath) {
   console.log('🎧 Iniciando transcrição com Whisper para:', audioPath);
 
   return new Promise((resolve) => {
     const absolutePath = path.resolve(audioPath);
-    const txtPath = absolutePath.replace(/\.[^/.]+$/, ".txt");
+    const fileNameWithoutExt = path.basename(absolutePath).replace(/\.[^/.]+$/, "");
+    const dirName = path.dirname(absolutePath);
+    const txtName = `${fileNameWithoutExt}.txt`;
+    const txtPathInRoot = path.resolve(txtName); // onde o Whisper gera na raiz
+    const txtPathCorrect = path.join(dirName, txtName); // onde queremos que ele fique
 
-    // Passando --output_dir para que o txt fique na mesma pasta do áudio
-    const command = `python -m whisper "${absolutePath}" --model small --language Portuguese --output_format txt --output_dir ./audios`;
+    const command = `python -m whisper "${absolutePath}" --model small --language Portuguese --output_format txt`;
 
     exec(command, (error, stdout, stderr) => {
       if (error) {
@@ -132,12 +133,22 @@ async function transcreverAudio(audioPath) {
 
       console.log('🖥️ Whisper CLI output:', stdout);
 
-      if (!fs.existsSync(txtPath)) {
-        console.error('⚠️ Arquivo de transcrição não encontrado:', txtPath);
+      // Move o arquivo txt da raiz para a pasta do áudio (se existir)
+      if (fs.existsSync(txtPathInRoot)) {
+        try {
+          fs.renameSync(txtPathInRoot, txtPathCorrect);
+          console.log(`📄 Arquivo de transcrição movido para: ${txtPathCorrect}`);
+        } catch (moveErr) {
+          console.error('❌ Erro ao mover o arquivo txt:', moveErr.message);
+          return resolve(null);
+        }
+      } else {
+        console.error('⚠️ Arquivo de transcrição não encontrado:', txtPathInRoot);
         return resolve(null);
       }
 
-      fs.readFile(txtPath, 'utf8', (err, data) => {
+      // Lê o conteúdo do arquivo na pasta correta
+      fs.readFile(txtPathCorrect, 'utf8', (err, data) => {
         if (err) {
           console.error('❌ Erro ao ler o arquivo de transcrição:', err.message);
           return resolve(null);
@@ -152,7 +163,7 @@ async function transcreverAudio(audioPath) {
         }
 
         // Apaga arquivo txt após ler (opcional)
-        fs.unlink(txtPath, () => {});
+        fs.unlink(txtPathCorrect, () => {});
 
         resolve(texto);
       });
