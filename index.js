@@ -4,6 +4,7 @@ import dotenv from 'dotenv';
 import axios from 'axios';
 import fs from 'fs';
 import { exec } from 'child_process';
+import path from 'path';
 
 dotenv.config();
 
@@ -49,7 +50,6 @@ async function startBot(whatsappClient) {
         const audioBuffer = await client.decryptFile(message);
         fs.writeFileSync(oggPath, audioBuffer);
 
-        // Usar diretamente o arquivo .ogg para transcrição, sem conversão
         const texto = await transcreverAudio(oggPath);
 
         if (!texto) {
@@ -88,17 +88,29 @@ async function startBot(whatsappClient) {
   });
 }
 
-// Função que chama seu script Python para transcrever o áudio
+// ✅ Função que chama Whisper para transcrever via CLI
 async function transcreverAudio(audioPath) {
   console.log('Chamando transcreverAudio com o arquivo:', audioPath);
-  return new Promise((resolve, reject) => {
-    // 'python' ou 'py' dependendo do seu ambiente
-    exec(`python transcribe.py "${audioPath}"`, (error, stdout, stderr) => {
+  return new Promise((resolve) => {
+    const absolutePath = path.resolve(audioPath);
+    const command = `python -m whisper "${absolutePath}" --model small --language Portuguese --output_format txt`;
+
+    exec(command, (error, stdout, stderr) => {
       if (error) {
-        console.error('Erro ao transcrever com Whisper:', error);
+        console.error('Erro ao transcrever com Whisper:', stderr || error.message);
         return resolve(null);
       }
-      resolve(stdout.trim());
+
+      const txtPath = absolutePath.replace(/\.[^/.]+$/, ".txt");
+
+      fs.readFile(txtPath, "utf8", (err, data) => {
+        if (err) {
+          console.error("Erro ao ler o arquivo de transcrição:", err.message);
+          return resolve(null);
+        }
+
+        resolve(data.trim());
+      });
     });
   });
 }
