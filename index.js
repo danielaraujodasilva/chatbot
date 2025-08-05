@@ -36,32 +36,24 @@ async function startBot(whatsappClient) {
   console.log(`🤖 Bot iniciado! Rodando na porta ${port}`);
 
   client.onAnyMessage(async (message) => {
-    console.log('🔔 onAnyMessage RECEBIDA:', JSON.stringify(message, null, 2));
+    console.log('📬 onAnyMessage:', JSON.stringify(message, null, 2));
   });
 
   client.onMessage(async (message) => {
-  console.log('====================================');
-  console.log('🔔 Mensagem RECEBIDA COMPLETA:');
-  console.log('Tipo:', message.type);
-  console.log('Mimetype:', message.mimetype);
-  console.log('Is Media:', message.isMedia);
-  console.log('Is Group:', message.isGroupMsg);
-  console.log('Body:', message.body);
-  console.log('From:', message.from);
-  console.log('Timestamp:', message.t);
-  console.log('Quoted Msg:', message.quotedMsg ? JSON.stringify(message.quotedMsg, null, 2) : 'Nenhuma');
-  console.log('=== Dados extras (keys da mensagem) ===');
-  Object.keys(message).forEach(key => {
-    if (!['type', 'mimetype', 'isMedia', 'isGroupMsg', 'body', 'from', 't', 'quotedMsg'].includes(key)) {
-      console.log(`- ${key}:`, message[key]);
-    }
+    console.log('📩 onMessage:', JSON.stringify(message, null, 2));
   });
-  console.log('====================================\n\n');
-});
 
+  client.onMessageReceived(async (message) => {
+    console.log('📥 onMessageReceived:', JSON.stringify(message, null, 2));
+  });
 
+  client.onStateChange((state) => {
+    console.log('⚙️ Estado do cliente mudou:', state);
+  });
 
-
+  client.onStreamChange((stream) => {
+    console.log('🔄 Stream mudou:', stream);
+  });
 }
 
 async function transcreverAudio(audioPath) {
