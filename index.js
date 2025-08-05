@@ -19,7 +19,7 @@ const timersResposta = new Map();
 create({
   session: 'chat-tatuagem',
   multidevice: true,
-  headless: true,
+  headless: new,
   browserArgs: [
     '--no-sandbox',
     '--disable-setuid-sandbox',
