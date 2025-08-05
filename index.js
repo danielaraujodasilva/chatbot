@@ -2,6 +2,9 @@ import { create } from 'venom-bot';
 import express from 'express';
 import dotenv from 'dotenv';
 import axios from 'axios';
+import fs from 'fs';
+import { exec } from 'child_process';
+import path from 'path';
 
 dotenv.config();
 
@@ -9,23 +12,10 @@ const app = express();
 const port = process.env.PORT || 3010; 
 let client = null;
 
-// Controle de clientes com IA ativada
 const clientesAtivos = new Map();
-
-// Buffer para acumular mensagens por cliente e timers para controlar envio único
 const buffersMensagens = new Map();
 const timersResposta = new Map();
 
-// Perguntas frequentes (FAQ)
-const faq = {
-  1: '💬 Quanto custa uma tatuagem?\nNossas promoções começam em R$699, e o valor final depende do tamanho e da arte.',
-  2: '💬 Como funciona a consultoria?\nOferecemos atendimento personalizado para planejar sua tatuagem dos sonhos.',
-  3: '💬 Onde fica o estúdio?\nEstamos localizados na Rua Exemplo, 123, Bairro Tal, Cidade.',
-  4: '💬 Quais os cuidados após fazer uma tatuagem?\nMantenha a área limpa, evite sol e piscina por 30 dias, e siga nossas recomendações.',
-  5: '💬 Quais são as formas de pagamento?\nAceitamos dinheiro, cartão e PIX.',
-};
-
-// Inicia o bot Venom
 create({
   session: 'chat-tatuagem',
   multidevice: true,
@@ -37,7 +27,7 @@ create({
     '--disable-dev-shm-usage',
     '--headless=new',
   ],
-  executablePath: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe', // ajuste se necessário
+  executablePath: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
 })
   .then((whatsappClient) => startBot(whatsappClient))
   .catch((err) => console.error('❌ Erro ao iniciar Venom:', err));
@@ -47,87 +37,83 @@ async function startBot(whatsappClient) {
   console.log(`🤖 Bot iniciado! Rodando na porta ${port}`);
 
   client.onMessage(async (message) => {
-    if (message.isGroupMsg || message.type !== 'chat') return;
+    if (message.isGroupMsg) return;
 
     const from = message.from.toString();
-    const texto = message.body.toLowerCase().trim();
 
-    if (texto === 'batatadoce') {
-      clientesAtivos.set(from, true);
+    if (message.type === 'audio' || message.type === 'ptt') {
+      await client.sendText(from, '🎙️ Recebido! Transcrevendo seu áudio...');
 
-      // Limpar buffers e timers caso existam
-      buffersMensagens.delete(from);
-      if (timersResposta.has(from)) {
-        clearTimeout(timersResposta.get(from));
-        timersResposta.delete(from);
-      }
+      try {
+        const oggPath = `./audios/${from}-${Date.now()}.ogg`;
+        const mp3Path = oggPath.replace('.ogg', '.mp3');
 
-      const menu =
-`🌟 Olá! Eu sou a secretária virtual do Estúdio Daniel Araujo.
-Posso te ajudar com dúvidas, informações e orçamentos.
+        const audioBuffer = await client.decryptFile(message);
+        fs.writeFileSync(oggPath, audioBuffer);
 
-Digite o número da pergunta que deseja saber:
+        await new Promise((resolve, reject) => {
+          exec(`ffmpeg -i ${oggPath} ${mp3Path}`, (error) => {
+            if (error) reject(error);
+            else resolve();
+          });
+        });
 
-1 - Quanto custa uma tatuagem?
-2 - Como funciona a consultoria?
-3 - Onde fica o estúdio?
-4 - Quais os cuidados após fazer uma tatuagem?
-5 - Quais são as formas de pagamento?
+        const texto = await transcreverAudio(mp3Path);
 
-🧠 Se preferir, escreva sua pergunta que eu respondo com a ajuda da nossa IA!
-❌ Para sair do atendimento, digite "sair".`;
+        if (!texto) {
+          await client.sendText(from, '❌ Não consegui entender o áudio.');
+          return;
+        }
 
-      await client.sendText(from, menu);
-      return;
-    }
-
-    if (texto === 'sair') {
-      clientesAtivos.delete(from);
-
-      // Limpar buffers e timers caso existam
-      buffersMensagens.delete(from);
-      if (timersResposta.has(from)) {
-        clearTimeout(timersResposta.get(from));
-        timersResposta.delete(from);
-      }
-
-      await client.sendText(from, '🚪 Atendimento encerrado. Quando quiser voltar, é só digitar "batatadoce".');
-      return;
-    }
-
-    if (clientesAtivos.get(from)) {
-      if (faq[texto]) {
-        await client.sendText(from, faq[texto]);
-        return;
-      }
-
-      // Acumular mensagens no buffer do cliente
-      if (!buffersMensagens.has(from)) {
-        buffersMensagens.set(from, []);
-      }
-      buffersMensagens.get(from).push(message.body.trim());
-
-      // Limpar timer anterior para reiniciar contagem
-      if (timersResposta.has(from)) {
-        clearTimeout(timersResposta.get(from));
-      }
-
-      // Definir novo timer para enviar a resposta após 10 segundos de "silêncio"
-      const timeout = setTimeout(async () => {
-        const mensagensConcatenadas = buffersMensagens.get(from).join(' ');
-        buffersMensagens.delete(from);
-        timersResposta.delete(from);
-
-        const resposta = await enviarParaIALocal(mensagensConcatenadas);
+        const resposta = await enviarParaIALocal(texto);
         await client.sendText(from, resposta);
-      }, 10000); // 10 segundos
 
-      timersResposta.set(from, timeout);
+        fs.unlinkSync(oggPath);
+        fs.unlinkSync(mp3Path);
+
+      } catch (error) {
+        console.error('Erro ao processar áudio:', error.message);
+        await client.sendText(from, '❌ Erro ao processar seu áudio.');
+      }
+      return;
     }
+
+    if (!buffersMensagens.has(from)) buffersMensagens.set(from, []);
+    buffersMensagens.get(from).push(message.body.trim());
+
+    if (timersResposta.has(from)) clearTimeout(timersResposta.get(from));
+
+    const timeout = setTimeout(async () => {
+      const mensagensConcatenadas = buffersMensagens.get(from).join(' ');
+      buffersMensagens.delete(from);
+      timersResposta.delete(from);
+
+      const resposta = await enviarParaIALocal(mensagensConcatenadas);
+      await client.sendText(from, resposta);
+    }, 10000);
+
+    timersResposta.set(from, timeout);
   });
 }
 
-// Consulta IA local (Ollama)
+async function transcreverAudio(mp3Path) {
+  return new Promise((resolve, reject) => {
+    exec(`whisper "${mp3Path}" --language Portuguese --model small --output_format txt`, (err) => {
+      if (err) {
+        console.error('Erro ao transcrever com Whisper:', err);
+        return resolve(null);
+      }
+      const txtPath = mp3Path.replace('.mp3', '.txt');
+      if (fs.existsSync(txtPath)) {
+        const texto = fs.readFileSync(txtPath, 'utf-8').trim();
+        fs.unlinkSync(txtPath);
+        return resolve(texto);
+      }
+      resolve(null);
+    });
+  });
+}
+
 async function enviarParaIALocal(pergunta) {
   try {
     console.log(`🧠 Enviando pergunta para IA local: "${pergunta}"`);
@@ -188,6 +174,5 @@ Agora responda à seguinte pergunta do cliente:
   }
 }
 
-// Painel web (opcional)
 app.get('/', (req, res) => res.send('Painel do chatbot será criado aqui!'));
 app.listen(port);
