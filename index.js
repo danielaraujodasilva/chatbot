@@ -17,8 +17,8 @@ const timersResposta = new Map();
 
 create({
   session: 'chat-tatuagem',
-  multidevice: true,
-  headless: "new",
+  multidevice: true,            // Tente alterar para false se continuar não recebendo áudio
+  headless: "new",              // Tente "true" se persistir problema
   browserArgs: [
     '--no-sandbox',
     '--disable-setuid-sandbox',
@@ -35,19 +35,31 @@ async function startBot(whatsappClient) {
   client = whatsappClient;
   console.log(`🤖 Bot iniciado! Rodando na porta ${port}`);
 
+  // Listener para **todas** mensagens, para debugging
+  client.onAnyMessage(async (message) => {
+    console.log('🔔 onAnyMessage RECEBIDA:', JSON.stringify(message, null, 2));
+  });
+
   client.onMessage(async (message) => {
     console.log('🔔 Mensagem RECEBIDA no onMessage:', JSON.stringify(message, null, 2));
 
-    if (message.isGroupMsg) return;
+    // Desative o filtro para grupos temporariamente, só para debug:
+    // if (message.isGroupMsg) return;
 
     const from = message.from.toString();
 
-    // Identificando o tipo da mensagem para áudio
+    // Se for áudio (tipos diferentes que podem chegar)
     if (message.type === 'audio' || message.type === 'ptt' || message.type === 'voice') {
       await client.sendText(from, '🎙️ Recebido! Transcrevendo seu áudio...');
 
       try {
-        const audioExt = message.mimetype?.includes('ogg') ? 'ogg' : 'mp3';
+        // Definindo extensão conforme mimetype (exemplo: audio/ogg, audio/mp3, etc)
+        let audioExt = 'bin';
+        if (message.mimetype) {
+          const parts = message.mimetype.split('/');
+          if (parts.length === 2) audioExt = parts[1];
+        }
+
         const audioPath = `./audios/${from}-${Date.now()}.${audioExt}`;
 
         const audioBuffer = await client.decryptFile(message);
@@ -75,8 +87,21 @@ async function startBot(whatsappClient) {
       return;
     }
 
+    // Se for qualquer outro tipo de mídia, tenta salvar para debug
+    if (message.isMedia || (message.mimetype && message.mimetype.startsWith('audio'))) {
+      try {
+        const buffer = await client.decryptFile(message);
+        const ext = message.mimetype?.split('/')[1] || 'bin';
+        const filename = `./audios/DEBUG-${from}-${Date.now()}.${ext}`;
+        fs.writeFileSync(filename, buffer);
+        console.log(`📁 Mídia recebida e salva para DEBUG: ${filename}`);
+      } catch (err) {
+        console.error('Erro ao salvar mídia para DEBUG:', err);
+      }
+    }
+
     if (!buffersMensagens.has(from)) buffersMensagens.set(from, []);
-    buffersMensagens.get(from).push(message.body.trim());
+    buffersMensagens.get(from).push(message.body?.trim() || '');
 
     if (timersResposta.has(from)) clearTimeout(timersResposta.get(from));
 
@@ -93,7 +118,7 @@ async function startBot(whatsappClient) {
   });
 }
 
-// ✅ Função atualizada que chama Whisper CLI e lê a transcrição
+// Função para transcrição com Whisper CLI
 async function transcreverAudio(audioPath) {
   console.log('🎧 Iniciando transcrição com Whisper para:', audioPath);
 
@@ -109,13 +134,13 @@ async function transcreverAudio(audioPath) {
         return resolve(null);
       }
 
-      // Confirma se o arquivo foi gerado
+      console.log('🖥️ Whisper CLI output:', stdout);
+
       if (!fs.existsSync(txtPath)) {
         console.error('⚠️ Arquivo de transcrição não encontrado:', txtPath);
         return resolve(null);
       }
 
-      // Lê o conteúdo do .txt
       fs.readFile(txtPath, 'utf8', (err, data) => {
         if (err) {
           console.error('❌ Erro ao ler o arquivo de transcrição:', err.message);
@@ -130,7 +155,7 @@ async function transcreverAudio(audioPath) {
           return resolve(null);
         }
 
-        // (Opcional) Apaga o arquivo txt depois de ler
+        // Apaga arquivo txt após ler (opcional)
         fs.unlink(txtPath, () => {});
 
         resolve(texto);
