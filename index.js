@@ -40,11 +40,15 @@ async function startBot(whatsappClient) {
   });
 
   client.onMessage(async (message) => {
-    console.log('🔔 Mensagem RECEBIDA no onMessage:', JSON.stringify(message, null, 2));
+    console.log(`🔔 Mensagem RECEBIDA: tipo=${message.type}, mimetype=${message.mimetype}`);
+
+    // if (message.isGroupMsg) return;
 
     const from = message.from.toString();
 
-    if (message.type === 'audio' || message.type === 'ptt' || message.type === 'voice') {
+    const isAudio = ['audio', 'ptt', 'voice'].includes(message.type) || (message.mimetype && message.mimetype.startsWith('audio/'));
+
+    if (isAudio) {
       await client.sendText(from, '🎙️ Recebido! Transcrevendo seu áudio...');
 
       try {
@@ -54,20 +58,34 @@ async function startBot(whatsappClient) {
           if (parts.length === 2) audioExt = parts[1];
         }
 
-        const audioPath = `./${from}-${Date.now()}.${audioExt}`;
+        const audioPath = `./audios/${from}-${Date.now()}.${audioExt}`;
         const audioBuffer = await client.decryptFile(message);
         fs.writeFileSync(audioPath, audioBuffer);
         console.log(`🎧 Áudio salvo em: ${audioPath}`);
 
+        // Chama transcrição
         const texto = await transcreverAudio(audioPath);
 
         if (!texto) {
           await client.sendText(from, '❌ Não consegui entender o áudio.');
+          try {
+            fs.unlinkSync(audioPath);
+          } catch(e) {
+            console.error('Erro ao deletar áudio após falha:', e);
+          }
           return;
         }
 
         const resposta = await enviarParaIALocal(texto);
         await client.sendText(from, resposta);
+
+        // Apaga o áudio após resposta
+        try {
+          fs.unlinkSync(audioPath);
+          console.log(`🗑️ Áudio deletado: ${audioPath}`);
+        } catch(e) {
+          console.error('Erro ao deletar áudio após sucesso:', e);
+        }
 
       } catch (error) {
         console.error('Erro ao processar áudio:', error);
@@ -76,7 +94,7 @@ async function startBot(whatsappClient) {
       return;
     }
 
-    if (message.isMedia || (message.mimetype && message.mimetype.startsWith('audio'))) {
+    if (message.isMedia || (message.mimetype && message.mimetype.startsWith('audio/'))) {
       try {
         const buffer = await client.decryptFile(message);
         const ext = message.mimetype?.split('/')[1] || 'bin';
@@ -112,7 +130,9 @@ async function transcreverAudio(audioPath) {
   return new Promise((resolve) => {
     const absoluteAudioPath = path.resolve(audioPath);
     const txtName = path.basename(absoluteAudioPath).replace(/\.[^/.]+$/, ".txt");
-    const txtPath = path.resolve(txtName);
+
+    // Aqui corrigimos para buscar o txt na MESMA pasta do áudio, não na raiz
+    const txtPath = path.join(path.dirname(absoluteAudioPath), txtName);
 
     const command = `python -m whisper "${absoluteAudioPath}" --model small --language Portuguese --output_format txt`;
 
@@ -138,25 +158,19 @@ async function transcreverAudio(audioPath) {
         const texto = data.trim();
         console.log('📝 Transcrição extraída:', texto || '[Transcrição vazia]');
 
-        // Apaga os arquivos após uso
-        try {
-          fs.unlinkSync(txtPath);
-          console.log(`🗑️ Arquivo de transcrição deletado: ${txtPath}`);
-        } catch (err) {
-          console.error('❌ Erro ao deletar TXT:', err.message);
-        }
-
-        try {
-          fs.unlinkSync(audioPath);
-          console.log(`🗑️ Áudio deletado: ${audioPath}`);
-        } catch (err) {
-          console.error('❌ Erro ao deletar áudio:', err.message);
-        }
-
         if (!texto) {
           console.warn('⚠️ O arquivo .txt está vazio. Verifique se o áudio tinha fala compreensível.');
           return resolve(null);
         }
+
+        // Apaga o arquivo txt após ler
+        fs.unlink(txtPath, (unlinkErr) => {
+          if (unlinkErr) {
+            console.error('Erro ao deletar arquivo de transcrição:', unlinkErr);
+          } else {
+            console.log(`🗑️ Arquivo de transcrição deletado: ${txtPath}`);
+          }
+        });
 
         resolve(texto);
       });
@@ -168,7 +182,39 @@ async function enviarParaIALocal(pergunta) {
   try {
     console.log(`🧠 Enviando pergunta para IA local: "${pergunta}"`);
 
-    const prompt = `...` // mantive seu prompt original aqui por brevidade
+    const prompt = `
+Você é a secretária virtual do Estúdio de Tatuagem Daniel Araujo.
+
+Seu papel:
+- Responda apenas o que foi perguntado, de forma muito direta, objetiva e curta (uma ou duas frases no máximo), evitando qualquer informação adicional.
+- Seja educada e simpática, mas sem enrolação.
+- Pode ser extremamente informal, usar gírias e tentar seguir a conversa no mesmo tom que o cliente.
+- Informar sobre promoções, estilos de tatuagem, cuidados, preços e agendamentos.
+- Incentivar o envio de referências de arte.
+- Nunca responda sobre assuntos fora do estúdio (política, medicina, etc.).
+- Utilize linguagem acessível e sem termos técnicos complexos.
+
+O Estúdio de tatuagem se chama Estúdio Daniel Araujo.
+Se o cliente quiser ver meus trabalhos, sugira o instagram instagram.com/danielaraujotatuador.
+O endereço é Avenida Jurema, 609, Pq Jurema, Guarulhos.
+O horário de atendimento é 24h, exigindo apenas um prévio agendamento.
+Qualquer agendamento exige o pagamento de um sinal no valor de R$50. Esse valor é abatido do valor total da tatuagem, o cliente só perde esse valor se não comparecer no horário agendado.
+Se o cliente estiver interessado na promoção, provavelmente se trata da promoção de R$699, com as seguintes regras:
+
+1 - Só vale para tatuagem em preto e branco
+2 - Não vale para coberturas nem reformas de tatuagens.
+3 - Tem que ser algo possível de se fazer em uma sessão só (ou que você esteja ciente que se precisar de mais uma sessão vai ser cobrado o mesmo valor novamente)
+4 - O horário é reservado e cobramos R$50 de sinal, esse valor é abatido no pagamento da tatuagem, você só perde se faltar.
+5 - Temos também anestesia por R$99 (pomada original que realmente funciona).
+6 - Promoção válida para costas, braço, perna (interna ou externa) ou peitoral.
+
+Se o cliente quiser um orçamento personalizado, diga que o tatuador irá avaliar, peça que envie referências e explique a ideia.
+Se o cliente quiser agendar, diga que você irá chamar o tatuador para continuar a conversa.
+
+Agora responda à seguinte pergunta do cliente:
+
+"${pergunta}"
+`.trim();
 
     console.log('⏳ Aguardando resposta da IA...');
 
