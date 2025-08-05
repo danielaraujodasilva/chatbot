@@ -66,7 +66,11 @@ async function startBot(whatsappClient) {
 
         if (!texto) {
           await client.sendText(from, '❌ Não consegui entender o áudio.');
-          fs.unlinkSync(audioPath);
+          try {
+            fs.unlinkSync(audioPath);
+          } catch(e) {
+            console.error('Erro ao deletar áudio após falha:', e);
+          }
           return;
         }
 
@@ -74,7 +78,12 @@ async function startBot(whatsappClient) {
         await client.sendText(from, resposta);
 
         // Apaga o áudio após resposta
-        fs.unlinkSync(audioPath);
+        try {
+          fs.unlinkSync(audioPath);
+          console.log(`🗑️ Áudio deletado: ${audioPath}`);
+        } catch(e) {
+          console.error('Erro ao deletar áudio após sucesso:', e);
+        }
 
       } catch (error) {
         console.error('Erro ao processar áudio:', error);
@@ -117,11 +126,11 @@ async function transcreverAudio(audioPath) {
   console.log('🎧 Iniciando transcrição com Whisper para:', audioPath);
 
   return new Promise((resolve) => {
-    const absolutePath = path.resolve(audioPath);
-    const txtName = path.basename(absolutePath).replace(/\.[^/.]+$/, ".txt");
+    const absoluteAudioPath = path.resolve(audioPath);
+    const txtName = path.basename(absoluteAudioPath).replace(/\.[^/.]+$/, ".txt");
     const txtPath = path.resolve(txtName); // arquivo TXT gerado na raiz
 
-    const command = `python -m whisper "${absolutePath}" --model small --language Portuguese --output_format txt`;
+    const command = `python -m whisper "${absoluteAudioPath}" --model small --language Portuguese --output_format txt`;
 
     exec(command, (error, stdout, stderr) => {
       if (error) {
@@ -151,8 +160,12 @@ async function transcreverAudio(audioPath) {
         }
 
         // Apaga o arquivo txt após ler
-        fs.unlink(txtPath, () => {
-          console.log(`🗑️ Arquivo de transcrição deletado: ${txtPath}`);
+        fs.unlink(txtPath, (unlinkErr) => {
+          if (unlinkErr) {
+            console.error('Erro ao deletar arquivo de transcrição:', unlinkErr);
+          } else {
+            console.log(`🗑️ Arquivo de transcrição deletado: ${txtPath}`);
+          }
         });
 
         resolve(texto);
@@ -223,4 +236,3 @@ Agora responda à seguinte pergunta do cliente:
 
 app.get('/', (req, res) => res.send('Painel do chatbot será criado aqui!'));
 app.listen(port);
- 
