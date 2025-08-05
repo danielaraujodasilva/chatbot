@@ -88,15 +88,13 @@ async function startBot(whatsappClient) {
   });
 }
 
-// ✅ Função atualizada que chama Whisper CLI e lê a transcrição
+// ✅ Função atualizada que chama Whisper CLI e captura transcrição do stdout
 async function transcreverAudio(audioPath) {
   console.log('🎧 Iniciando transcrição com Whisper para:', audioPath);
 
   return new Promise((resolve) => {
     const absolutePath = path.resolve(audioPath);
-    const txtPath = absolutePath.replace(/\.[^/.]+$/, ".txt");
-
-    const command = `python -m whisper "${absolutePath}" --model small --language Portuguese --output_format txt`;
+    const command = `python -m whisper "${absolutePath}" --model small --language Portuguese`;
 
     exec(command, (error, stdout, stderr) => {
       if (error) {
@@ -104,32 +102,24 @@ async function transcreverAudio(audioPath) {
         return resolve(null);
       }
 
-      // Confirma se o arquivo foi gerado
-      if (!fs.existsSync(txtPath)) {
-        console.error('⚠️ Arquivo de transcrição não encontrado:', txtPath);
+      // Exemplo de stdout:
+      // [00:00.000 --> 00:03.600]  Oi, eu queria saber sobre as promoções vigentes.
+
+      // Extrai texto removendo timestamps e espaços
+      const linhas = stdout.split('\n');
+      const textos = linhas.map(linha => {
+        return linha.replace(/^\[\d{2}:\d{2}\.\d{3} --> \d{2}:\d{2}\.\d{3}\]\s*/, '').trim();
+      }).filter(t => t.length > 0);
+
+      const textoFinal = textos.join(' ').trim();
+
+      if (!textoFinal) {
+        console.warn('⚠️ Transcrição vazia no stdout.');
         return resolve(null);
       }
 
-      // Lê o conteúdo do .txt
-      fs.readFile(txtPath, 'utf8', (err, data) => {
-        if (err) {
-          console.error('❌ Erro ao ler o arquivo de transcrição:', err.message);
-          return resolve(null);
-        }
-
-        const texto = data.trim();
-        console.log('📝 Transcrição extraída:', texto || '[Transcrição vazia]');
-
-        if (!texto) {
-          console.warn('⚠️ O arquivo .txt está vazio. Verifique se o áudio tinha fala compreensível.');
-          return resolve(null);
-        }
-
-        // (Opcional) Apaga o arquivo txt depois de ler
-        fs.unlink(txtPath, () => {});
-
-        resolve(texto);
-      });
+      console.log('📝 Transcrição extraída do stdout:', textoFinal);
+      resolve(textoFinal);
     });
   });
 }
