@@ -73,6 +73,7 @@ async function startBot(whatsappClient) {
         const resposta = await enviarParaIALocal(texto);
         await client.sendText(from, resposta);
 
+        // Apaga o áudio após resposta
         fs.unlinkSync(audioPath);
 
       } catch (error) {
@@ -117,11 +118,8 @@ async function transcreverAudio(audioPath) {
 
   return new Promise((resolve) => {
     const absolutePath = path.resolve(audioPath);
-    const fileNameWithoutExt = path.basename(absolutePath).replace(/\.[^/.]+$/, "");
-    const dirName = path.dirname(absolutePath);
-    const txtName = `${fileNameWithoutExt}.txt`;
-    const txtPathInRoot = path.resolve(txtName); // onde o Whisper gera na raiz
-    const txtPathCorrect = path.join(dirName, txtName); // onde queremos que ele fique
+    const txtName = path.basename(absolutePath).replace(/\.[^/.]+$/, ".txt");
+    const txtPath = path.resolve(txtName); // arquivo TXT gerado na raiz
 
     const command = `python -m whisper "${absolutePath}" --model small --language Portuguese --output_format txt`;
 
@@ -133,22 +131,12 @@ async function transcreverAudio(audioPath) {
 
       console.log('🖥️ Whisper CLI output:', stdout);
 
-      // Move o arquivo txt da raiz para a pasta do áudio (se existir)
-      if (fs.existsSync(txtPathInRoot)) {
-        try {
-          fs.renameSync(txtPathInRoot, txtPathCorrect);
-          console.log(`📄 Arquivo de transcrição movido para: ${txtPathCorrect}`);
-        } catch (moveErr) {
-          console.error('❌ Erro ao mover o arquivo txt:', moveErr.message);
-          return resolve(null);
-        }
-      } else {
-        console.error('⚠️ Arquivo de transcrição não encontrado:', txtPathInRoot);
+      if (!fs.existsSync(txtPath)) {
+        console.error('⚠️ Arquivo de transcrição não encontrado:', txtPath);
         return resolve(null);
       }
 
-      // Lê o conteúdo do arquivo na pasta correta
-      fs.readFile(txtPathCorrect, 'utf8', (err, data) => {
+      fs.readFile(txtPath, 'utf8', (err, data) => {
         if (err) {
           console.error('❌ Erro ao ler o arquivo de transcrição:', err.message);
           return resolve(null);
@@ -162,8 +150,10 @@ async function transcreverAudio(audioPath) {
           return resolve(null);
         }
 
-        // Apaga arquivo txt após ler (opcional)
-        fs.unlink(txtPathCorrect, () => {});
+        // Apaga o arquivo txt após ler
+        fs.unlink(txtPath, () => {
+          console.log(`🗑️ Arquivo de transcrição deletado: ${txtPath}`);
+        });
 
         resolve(texto);
       });
