@@ -88,28 +88,47 @@ async function startBot(whatsappClient) {
   });
 }
 
-// ✅ Função que chama Whisper para transcrever via CLI
+// ✅ Função atualizada que chama Whisper CLI e lê a transcrição
 async function transcreverAudio(audioPath) {
-  console.log('Chamando transcreverAudio com o arquivo:', audioPath);
+  console.log('🎧 Iniciando transcrição com Whisper para:', audioPath);
+
   return new Promise((resolve) => {
     const absolutePath = path.resolve(audioPath);
+    const txtPath = absolutePath.replace(/\.[^/.]+$/, ".txt");
+
     const command = `python -m whisper "${absolutePath}" --model small --language Portuguese --output_format txt`;
 
     exec(command, (error, stdout, stderr) => {
       if (error) {
-        console.error('Erro ao transcrever com Whisper:', stderr || error.message);
+        console.error('❌ Erro ao transcrever com Whisper:', stderr || error.message);
         return resolve(null);
       }
 
-      const txtPath = absolutePath.replace(/\.[^/.]+$/, ".txt");
+      // Confirma se o arquivo foi gerado
+      if (!fs.existsSync(txtPath)) {
+        console.error('⚠️ Arquivo de transcrição não encontrado:', txtPath);
+        return resolve(null);
+      }
 
-      fs.readFile(txtPath, "utf8", (err, data) => {
+      // Lê o conteúdo do .txt
+      fs.readFile(txtPath, 'utf8', (err, data) => {
         if (err) {
-          console.error("Erro ao ler o arquivo de transcrição:", err.message);
+          console.error('❌ Erro ao ler o arquivo de transcrição:', err.message);
           return resolve(null);
         }
 
-        resolve(data.trim());
+        const texto = data.trim();
+        console.log('📝 Transcrição extraída:', texto || '[Transcrição vazia]');
+
+        if (!texto) {
+          console.warn('⚠️ O arquivo .txt está vazio. Verifique se o áudio tinha fala compreensível.');
+          return resolve(null);
+        }
+
+        // (Opcional) Apaga o arquivo txt depois de ler
+        fs.unlink(txtPath, () => {});
+
+        resolve(texto);
       });
     });
   });
