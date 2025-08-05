@@ -9,7 +9,7 @@ import path from 'path';
 dotenv.config();
 
 const app = express();
-const port = process.env.PORT || 3010; 
+const port = process.env.PORT || 3010;
 let client = null;
 
 const clientesAtivos = new Map();
@@ -19,7 +19,7 @@ const timersResposta = new Map();
 create({
   session: 'chat-tatuagem',
   multidevice: true,
-  headless: new,
+  headless: "new", // corrigido
   browserArgs: [
     '--no-sandbox',
     '--disable-setuid-sandbox',
@@ -52,7 +52,7 @@ async function startBot(whatsappClient) {
         fs.writeFileSync(oggPath, audioBuffer);
 
         await new Promise((resolve, reject) => {
-          exec(`ffmpeg -i ${oggPath} ${mp3Path}`, (error) => {
+          exec(`ffmpeg -i "${oggPath}" "${mp3Path}"`, (error) => {
             if (error) reject(error);
             else resolve();
           });
@@ -62,6 +62,9 @@ async function startBot(whatsappClient) {
 
         if (!texto) {
           await client.sendText(from, '❌ Não consegui entender o áudio.');
+          // apagar arquivos
+          fs.unlinkSync(oggPath);
+          fs.unlinkSync(mp3Path);
           return;
         }
 
@@ -96,20 +99,16 @@ async function startBot(whatsappClient) {
   });
 }
 
+// Transcreve o áudio chamando o script Python que usa openai-whisper localmente
 async function transcreverAudio(mp3Path) {
   return new Promise((resolve, reject) => {
-    exec(`whisper "${mp3Path}" --language Portuguese --model small --output_format txt`, (err) => {
-      if (err) {
-        console.error('Erro ao transcrever com Whisper:', err);
+    // Ajuste 'python' para 'py' ou caminho absoluto do seu python se necessário
+    exec(`python transcribe.py "${mp3Path}"`, (error, stdout, stderr) => {
+      if (error) {
+        console.error('Erro ao transcrever com Whisper:', error);
         return resolve(null);
       }
-      const txtPath = mp3Path.replace('.mp3', '.txt');
-      if (fs.existsSync(txtPath)) {
-        const texto = fs.readFileSync(txtPath, 'utf-8').trim();
-        fs.unlinkSync(txtPath);
-        return resolve(texto);
-      }
-      resolve(null);
+      resolve(stdout.trim());
     });
   });
 }
