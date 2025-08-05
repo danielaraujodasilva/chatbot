@@ -45,24 +45,16 @@ async function startBot(whatsappClient) {
 
       try {
         const oggPath = `./audios/${from}-${Date.now()}.ogg`;
-        const mp3Path = oggPath.replace('.ogg', '.mp3');
 
         const audioBuffer = await client.decryptFile(message);
         fs.writeFileSync(oggPath, audioBuffer);
 
-        await new Promise((resolve, reject) => {
-          exec(`ffmpeg -i "${oggPath}" "${mp3Path}"`, (error) => {
-            if (error) reject(error);
-            else resolve();
-          });
-        });
-
-        const texto = await transcreverAudio(mp3Path);
+        // Usar diretamente o arquivo .ogg para transcrição, sem conversão
+        const texto = await transcreverAudio(oggPath);
 
         if (!texto) {
           await client.sendText(from, '❌ Não consegui entender o áudio.');
           fs.unlinkSync(oggPath);
-          fs.unlinkSync(mp3Path);
           return;
         }
 
@@ -70,7 +62,6 @@ async function startBot(whatsappClient) {
         await client.sendText(from, resposta);
 
         fs.unlinkSync(oggPath);
-        fs.unlinkSync(mp3Path);
 
       } catch (error) {
         console.error('Erro ao processar áudio:', error.message);
@@ -98,11 +89,11 @@ async function startBot(whatsappClient) {
 }
 
 // Função que chama seu script Python para transcrever o áudio
-async function transcreverAudio(mp3Path) {
-  console.log('Chamando transcreverAudio com o arquivo:', mp3Path);
+async function transcreverAudio(audioPath) {
+  console.log('Chamando transcreverAudio com o arquivo:', audioPath);
   return new Promise((resolve, reject) => {
-    // Use 'python' ou 'py' conforme seu ambiente, ou caminho absoluto do interpretador Python
-    exec(`python transcribe.py "${mp3Path}"`, (error, stdout, stderr) => {
+    // 'python' ou 'py' dependendo do seu ambiente
+    exec(`python transcribe.py "${audioPath}"`, (error, stdout, stderr) => {
       if (error) {
         console.error('Erro ao transcrever com Whisper:', error);
         return resolve(null);
