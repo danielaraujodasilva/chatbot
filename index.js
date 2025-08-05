@@ -40,88 +40,28 @@ async function startBot(whatsappClient) {
   });
 
   client.onMessage(async (message) => {
-    console.log(`🔔 Mensagem RECEBIDA: tipo=${message.type}, mimetype=${message.mimetype}`);
-
-    // if (message.isGroupMsg) return;
-
-    const from = message.from.toString();
-
-    const isAudio = ['audio', 'ptt', 'voice'].includes(message.type) || (message.mimetype && message.mimetype.startsWith('audio/'));
-
-    if (isAudio) {
-      await client.sendText(from, '🎙️ Recebido! Transcrevendo seu áudio...');
-
-      try {
-        let audioExt = 'bin';
-        if (message.mimetype) {
-          const parts = message.mimetype.split('/');
-          if (parts.length === 2) audioExt = parts[1];
-        }
-
-        const audioPath = `./audios/${from}-${Date.now()}.${audioExt}`;
-        const audioBuffer = await client.decryptFile(message);
-        fs.writeFileSync(audioPath, audioBuffer);
-        console.log(`🎧 Áudio salvo em: ${audioPath}`);
-
-        // Chama transcrição
-        const texto = await transcreverAudio(audioPath);
-
-        if (!texto) {
-          await client.sendText(from, '❌ Não consegui entender o áudio.');
-          try {
-            fs.unlinkSync(audioPath);
-          } catch(e) {
-            console.error('Erro ao deletar áudio após falha:', e);
-          }
-          return;
-        }
-
-        const resposta = await enviarParaIALocal(texto);
-        await client.sendText(from, resposta);
-
-        // Apaga o áudio após resposta
-        try {
-          fs.unlinkSync(audioPath);
-          console.log(`🗑️ Áudio deletado: ${audioPath}`);
-        } catch(e) {
-          console.error('Erro ao deletar áudio após sucesso:', e);
-        }
-
-      } catch (error) {
-        console.error('Erro ao processar áudio:', error);
-        await client.sendText(from, '❌ Erro ao processar seu áudio.');
-      }
-      return;
+  console.log('====================================');
+  console.log('🔔 Mensagem RECEBIDA COMPLETA:');
+  console.log('Tipo:', message.type);
+  console.log('Mimetype:', message.mimetype);
+  console.log('Is Media:', message.isMedia);
+  console.log('Is Group:', message.isGroupMsg);
+  console.log('Body:', message.body);
+  console.log('From:', message.from);
+  console.log('Timestamp:', message.t);
+  console.log('Quoted Msg:', message.quotedMsg ? JSON.stringify(message.quotedMsg, null, 2) : 'Nenhuma');
+  console.log('=== Dados extras (keys da mensagem) ===');
+  Object.keys(message).forEach(key => {
+    if (!['type', 'mimetype', 'isMedia', 'isGroupMsg', 'body', 'from', 't', 'quotedMsg'].includes(key)) {
+      console.log(`- ${key}:`, message[key]);
     }
-
-    if (message.isMedia || (message.mimetype && message.mimetype.startsWith('audio/'))) {
-      try {
-        const buffer = await client.decryptFile(message);
-        const ext = message.mimetype?.split('/')[1] || 'bin';
-        const filename = `./audios/DEBUG-${from}-${Date.now()}.${ext}`;
-        fs.writeFileSync(filename, buffer);
-        console.log(`📁 Mídia recebida e salva para DEBUG: ${filename}`);
-      } catch (err) {
-        console.error('Erro ao salvar mídia para DEBUG:', err);
-      }
-    }
-
-    if (!buffersMensagens.has(from)) buffersMensagens.set(from, []);
-    buffersMensagens.get(from).push(message.body?.trim() || '');
-
-    if (timersResposta.has(from)) clearTimeout(timersResposta.get(from));
-
-    const timeout = setTimeout(async () => {
-      const mensagensConcatenadas = buffersMensagens.get(from).join(' ');
-      buffersMensagens.delete(from);
-      timersResposta.delete(from);
-
-      const resposta = await enviarParaIALocal(mensagensConcatenadas);
-      await client.sendText(from, resposta);
-    }, 10000);
-
-    timersResposta.set(from, timeout);
   });
+  console.log('====================================\n\n');
+});
+
+
+
+
 }
 
 async function transcreverAudio(audioPath) {
