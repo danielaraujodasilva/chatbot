@@ -99,6 +99,7 @@ async function startBot(whatsappClient) {
 
 // Função que chama seu script Python para transcrever o áudio
 async function transcreverAudio(mp3Path) {
+  console.log('Chamando transcreverAudio com o arquivo:', mp3Path);
   return new Promise((resolve, reject) => {
     // Use 'python' ou 'py' conforme seu ambiente, ou caminho absoluto do interpretador Python
     exec(`python transcribe.py "${mp3Path}"`, (error, stdout, stderr) => {
