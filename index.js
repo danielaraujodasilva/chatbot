@@ -35,7 +35,6 @@ async function startBot(whatsappClient) {
   client = whatsappClient;
   console.log(`🤖 Bot iniciado! Rodando na porta ${port}`);
 
-  // Listener para **todas** mensagens, para debugging
   client.onAnyMessage(async (message) => {
     console.log('🔔 onAnyMessage RECEBIDA:', JSON.stringify(message, null, 2));
   });
@@ -43,17 +42,14 @@ async function startBot(whatsappClient) {
   client.onMessage(async (message) => {
     console.log('🔔 Mensagem RECEBIDA no onMessage:', JSON.stringify(message, null, 2));
 
-    // Desative o filtro para grupos temporariamente, só para debug:
     // if (message.isGroupMsg) return;
 
     const from = message.from.toString();
 
-    // Se for áudio (tipos diferentes que podem chegar)
     if (message.type === 'audio' || message.type === 'ptt' || message.type === 'voice') {
       await client.sendText(from, '🎙️ Recebido! Transcrevendo seu áudio...');
 
       try {
-        // Definindo extensão conforme mimetype (exemplo: audio/ogg, audio/mp3, etc)
         let audioExt = 'bin';
         if (message.mimetype) {
           const parts = message.mimetype.split('/');
@@ -87,7 +83,6 @@ async function startBot(whatsappClient) {
       return;
     }
 
-    // Se for qualquer outro tipo de mídia, tenta salvar para debug
     if (message.isMedia || (message.mimetype && message.mimetype.startsWith('audio'))) {
       try {
         const buffer = await client.decryptFile(message);
@@ -118,7 +113,7 @@ async function startBot(whatsappClient) {
   });
 }
 
-// Função para transcrição com Whisper CLI
+// Função para transcrição com Whisper CLI - ALTERAÇÃO AQUI: --output_dir ./audios
 async function transcreverAudio(audioPath) {
   console.log('🎧 Iniciando transcrição com Whisper para:', audioPath);
 
@@ -126,7 +121,8 @@ async function transcreverAudio(audioPath) {
     const absolutePath = path.resolve(audioPath);
     const txtPath = absolutePath.replace(/\.[^/.]+$/, ".txt");
 
-    const command = `python -m whisper "${absolutePath}" --model small --language Portuguese --output_format txt`;
+    // Passando --output_dir para que o txt fique na mesma pasta do áudio
+    const command = `python -m whisper "${absolutePath}" --model small --language Portuguese --output_format txt --output_dir ./audios`;
 
     exec(command, (error, stdout, stderr) => {
       if (error) {
