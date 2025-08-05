@@ -3,8 +3,8 @@ import express from 'express';
 import dotenv from 'dotenv';
 import axios from 'axios';
 import fs from 'fs';
+import { exec } from 'child_process';
 import path from 'path';
-import { execFile } from 'child_process';
 
 dotenv.config();
 
@@ -37,11 +37,28 @@ async function startBot(whatsappClient) {
   console.log(`🤖 Bot iniciado! Rodando na porta ${port}`);
 
   client.onMessage(async (message) => {
-    if (message.isGroupMsg) return;
+    console.log('🔔 Mensagem recebida:', {
+      from: message.from,
+      type: message.type,
+      isGroupMsg: message.isGroupMsg,
+    });
+
+    // Log completo da mensagem para inspeção detalhada
+    console.log('🧐 Mensagem completa:', JSON.stringify(message, null, 2));
+
+    if (message.isGroupMsg) {
+      console.log('⚠️ Mensagem em grupo ignorada');
+      return;
+    }
 
     const from = message.from.toString();
 
-    if (message.type === 'audio' || message.type === 'ptt') {
+    // Ajuste para detectar todos tipos possíveis de áudio/voz
+    const tiposAudio = ['audio', 'ptt', 'voice', 'audio_ogg']; 
+
+    if (tiposAudio.includes(message.type)) {
+      console.log('🎙️ Áudio ou PTT recebido de:', from);
+
       await client.sendText(from, '🎙️ Recebido! Transcrevendo seu áudio...');
 
       try {
@@ -49,8 +66,10 @@ async function startBot(whatsappClient) {
 
         const audioBuffer = await client.decryptFile(message);
         fs.writeFileSync(oggPath, audioBuffer);
+        console.log('💾 Áudio salvo em:', oggPath);
 
         const texto = await transcreverAudio(oggPath);
+        console.log('📝 Texto transcrito:', texto);
 
         if (!texto) {
           await client.sendText(from, '❌ Não consegui entender o áudio.');
@@ -64,7 +83,7 @@ async function startBot(whatsappClient) {
         fs.unlinkSync(oggPath);
 
       } catch (error) {
-        console.error('Erro ao processar áudio:', error.message);
+        console.error('❌ Erro ao processar áudio:', error);
         await client.sendText(from, '❌ Erro ao processar seu áudio.');
       }
       return;
@@ -88,46 +107,48 @@ async function startBot(whatsappClient) {
   });
 }
 
-// ✅ Função que chama Whisper via execFile e faz logs detalhados
+// Função que chama Whisper CLI para transcrever
 async function transcreverAudio(audioPath) {
-  console.log('🎧 Iniciando transcrição com Whisper para:', audioPath);
+  console.log('🎧 transcreverAudio chamada para:', audioPath);
 
   return new Promise((resolve) => {
     const absolutePath = path.resolve(audioPath);
-    const args = ['-m', 'whisper', absolutePath, '--model', 'small', '--language', 'Portuguese'];
+    const txtPath = absolutePath.replace(/\.[^/.]+$/, ".txt");
 
-    console.log('⏳ Executando python com args:', args.join(' '));
+    const command = `python -m whisper "${absolutePath}" --model small --language Portuguese --output_format txt`;
 
-    execFile('python', args, (error, stdout, stderr) => {
-      console.log('📢 execFile callback acionada');
+    exec(command, (error, stdout, stderr) => {
       if (error) {
-        console.error('❌ Erro ao transcrever com Whisper:', error.message);
-        console.error('stderr:', stderr);
+        console.error('❌ Erro ao transcrever com Whisper:', stderr || error.message);
         return resolve(null);
       }
 
-      console.log('stdout:', stdout);
-      console.log('stderr:', stderr);
-
-      if (!stdout) {
-        console.warn('⚠️ stdout vazio da execução Whisper');
+      // Confirma se o arquivo foi gerado
+      if (!fs.existsSync(txtPath)) {
+        console.error('⚠️ Arquivo de transcrição não encontrado:', txtPath);
         return resolve(null);
       }
 
-      const linhas = stdout.split('\n');
-      const textos = linhas.map(linha => {
-        return linha.replace(/^\[\d{2}:\d{2}\.\d{3} --> \d{2}:\d{2}\.\d{3}\]\s*/, '').trim();
-      }).filter(t => t.length > 0);
+      // Lê o conteúdo do .txt
+      fs.readFile(txtPath, 'utf8', (err, data) => {
+        if (err) {
+          console.error('❌ Erro ao ler o arquivo de transcrição:', err.message);
+          return resolve(null);
+        }
 
-      const textoFinal = textos.join(' ').trim();
+        const texto = data.trim();
+        console.log('📝 Transcrição extraída:', texto || '[Transcrição vazia]');
 
-      if (!textoFinal) {
-        console.warn('⚠️ Transcrição vazia após processamento do stdout.');
-        return resolve(null);
-      }
+        if (!texto) {
+          console.warn('⚠️ O arquivo .txt está vazio. Verifique se o áudio tinha fala compreensível.');
+          return resolve(null);
+        }
 
-      console.log('📝 Transcrição extraída do stdout:', textoFinal);
-      resolve(textoFinal);
+        // Opcional: Apaga o arquivo txt depois de ler
+        fs.unlink(txtPath, () => {});
+
+        resolve(texto);
+      });
     });
   });
 }
