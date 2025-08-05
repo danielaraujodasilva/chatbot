@@ -3,8 +3,8 @@ import express from 'express';
 import dotenv from 'dotenv';
 import axios from 'axios';
 import fs from 'fs';
-import { exec } from 'child_process';
 import path from 'path';
+import { execFile } from 'child_process';
 
 dotenv.config();
 
@@ -88,24 +88,32 @@ async function startBot(whatsappClient) {
   });
 }
 
-// ✅ Função atualizada que chama Whisper CLI e captura transcrição do stdout
+// ✅ Função que chama Whisper via execFile e faz logs detalhados
 async function transcreverAudio(audioPath) {
   console.log('🎧 Iniciando transcrição com Whisper para:', audioPath);
 
   return new Promise((resolve) => {
     const absolutePath = path.resolve(audioPath);
-    const command = `python -m whisper "${absolutePath}" --model small --language Portuguese`;
+    const args = ['-m', 'whisper', absolutePath, '--model', 'small', '--language', 'Portuguese'];
 
-    exec(command, (error, stdout, stderr) => {
+    console.log('⏳ Executando python com args:', args.join(' '));
+
+    execFile('python', args, (error, stdout, stderr) => {
+      console.log('📢 execFile callback acionada');
       if (error) {
-        console.error('❌ Erro ao transcrever com Whisper:', stderr || error.message);
+        console.error('❌ Erro ao transcrever com Whisper:', error.message);
+        console.error('stderr:', stderr);
         return resolve(null);
       }
 
-      // Exemplo de stdout:
-      // [00:00.000 --> 00:03.600]  Oi, eu queria saber sobre as promoções vigentes.
+      console.log('stdout:', stdout);
+      console.log('stderr:', stderr);
 
-      // Extrai texto removendo timestamps e espaços
+      if (!stdout) {
+        console.warn('⚠️ stdout vazio da execução Whisper');
+        return resolve(null);
+      }
+
       const linhas = stdout.split('\n');
       const textos = linhas.map(linha => {
         return linha.replace(/^\[\d{2}:\d{2}\.\d{3} --> \d{2}:\d{2}\.\d{3}\]\s*/, '').trim();
@@ -114,7 +122,7 @@ async function transcreverAudio(audioPath) {
       const textoFinal = textos.join(' ').trim();
 
       if (!textoFinal) {
-        console.warn('⚠️ Transcrição vazia no stdout.');
+        console.warn('⚠️ Transcrição vazia após processamento do stdout.');
         return resolve(null);
       }
 
