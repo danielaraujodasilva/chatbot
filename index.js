@@ -4,7 +4,6 @@ import dotenv from 'dotenv';
 import axios from 'axios';
 import fs from 'fs';
 import { exec } from 'child_process';
-import path from 'path';
 
 dotenv.config();
 
@@ -19,7 +18,7 @@ const timersResposta = new Map();
 create({
   session: 'chat-tatuagem',
   multidevice: true,
-  headless: "new", // corrigido
+  headless: "new",
   browserArgs: [
     '--no-sandbox',
     '--disable-setuid-sandbox',
@@ -62,7 +61,6 @@ async function startBot(whatsappClient) {
 
         if (!texto) {
           await client.sendText(from, '❌ Não consegui entender o áudio.');
-          // apagar arquivos
           fs.unlinkSync(oggPath);
           fs.unlinkSync(mp3Path);
           return;
@@ -99,10 +97,10 @@ async function startBot(whatsappClient) {
   });
 }
 
-// Transcreve o áudio chamando o script Python que usa openai-whisper localmente
+// Função que chama seu script Python para transcrever o áudio
 async function transcreverAudio(mp3Path) {
   return new Promise((resolve, reject) => {
-    // Ajuste 'python' para 'py' ou caminho absoluto do seu python se necessário
+    // Use 'python' ou 'py' conforme seu ambiente, ou caminho absoluto do interpretador Python
     exec(`python transcribe.py "${mp3Path}"`, (error, stdout, stderr) => {
       if (error) {
         console.error('Erro ao transcrever com Whisper:', error);
